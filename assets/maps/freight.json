@@ -1,0 +1,13 @@
+{
+  "id": "freight",
+  "name": "Freight",
+  "description": "A freight yard surrounded by shipping containers and rail cars. Tight corridors with a warehouse at the north end.",
+  "bounds": {
+    "minX": -60, "maxX": 60,
+    "minZ": -50, "maxZ": 50
+  },
+  "teamSpawns": {
+    "team0": [{"x": 0, "y": 1.65, "z": 44}],
+    "team1": [{"x": 0, "y": 1.65, "z": -38}]
+  }
+}
