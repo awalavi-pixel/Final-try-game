@@ -58,6 +58,9 @@ export class Player {
   constructor(private damageSystem: DamageSystem, startPos: THREE.Vector3) {
     this.position = startPos.clone();
     this.camera = new THREE.PerspectiveCamera(90, window.innerWidth / window.innerHeight, 0.05, 500);
+    // Set initial camera position immediately so first render is correct
+    this.camera.position.copy(this.position);
+    this.camera.rotation.order = 'YXZ';
     window.addEventListener('resize', () => {
       this.camera.aspect = window.innerWidth / window.innerHeight;
       this.camera.updateProjectionMatrix();
@@ -297,9 +300,12 @@ export class Player {
 
   respawn(pos: THREE.Vector3): void {
     this.position.copy(pos);
+    this.camera.position.copy(pos);
     this.health = this.maxHealth;
     this.alive = true;
     this.velocity.set(0, 0, 0);
+    this.yaw = 0;
+    this.pitch = 0;
   }
 
   isADS(): boolean {

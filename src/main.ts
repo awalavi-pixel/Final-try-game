@@ -454,12 +454,16 @@ class Game {
   }
 
   private render(alpha: number): void {
-    if (this.mode === 'menu') return;
+    void alpha;
+    if (this.mode === 'menu') {
+      // Keep the main canvas cleared to black while the menu overlay is active
+      this.renderer.getRenderer().clear();
+      return;
+    }
     if (!this.player) return;
 
-    // Use player camera
+    // Interpolate camera position for smooth render between fixed steps
     this.renderer.getRenderer().render(this.renderer.getScene(), this.player.camera);
-    void alpha;
   }
 }
 
