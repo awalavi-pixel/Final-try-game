@@ -214,31 +214,72 @@ class Game {
       }
     }
 
-    // Reposition player
+    // Reposition player facing into the map
     this.player.respawn(mission.playerSpawn);
 
-    // Show mission info
-    this.hud.showSubtitle(`MISSION: ${mission.name}`, 4);
-    setTimeout(() => {
-      this.hud.showSubtitle(mission.objectives[0]?.description ?? '', 3);
-    }, 4500);
+    // Show full mission briefing overlay
+    this.showMissionBriefing(mission.name, mission.description, mission.objectives[0]?.description ?? '');
 
     this.heshCalloutIndex = 0;
     this.heshCalloutTimer = 5;
   }
 
+  private showMissionBriefing(name: string, desc: string, objective: string): void {
+    const el = document.createElement('div');
+    el.style.cssText = `
+      position:fixed;top:0;left:0;width:100%;height:100%;
+      background:rgba(0,0,0,0.85);z-index:200;
+      display:flex;flex-direction:column;align-items:center;justify-content:center;
+      font-family:'Courier New',monospace;color:#fff;
+      animation:fadeIn 0.5s ease;
+    `;
+    el.innerHTML = `
+      <style>@keyframes fadeIn{from{opacity:0}to{opacity:1}}</style>
+      <div style="border:1px solid #444;padding:40px 60px;max-width:600px;text-align:center;background:rgba(0,0,0,0.6);">
+        <div style="color:#f90;font-size:11px;letter-spacing:4px;margin-bottom:16px;">OPERATION GHOST REBOOT</div>
+        <div style="font-size:26px;font-weight:bold;letter-spacing:3px;margin-bottom:20px;">${name.toUpperCase()}</div>
+        <div style="color:#aaa;font-size:14px;line-height:1.7;margin-bottom:24px;">${desc}</div>
+        <div style="border-top:1px solid #333;padding-top:20px;color:#f90;font-size:12px;letter-spacing:2px;">OBJECTIVE</div>
+        <div style="color:#eee;font-size:14px;margin-top:8px;margin-bottom:30px;">${objective}</div>
+        <div style="color:#666;font-size:11px;">PRESS ANY KEY TO DEPLOY</div>
+      </div>
+    `;
+    document.body.appendChild(el);
+    const dismiss = () => {
+      el.remove();
+      document.removeEventListener('keydown', dismiss);
+      el.removeEventListener('click', dismiss);
+    };
+    document.addEventListener('keydown', dismiss, { once: true });
+    el.addEventListener('click', dismiss);
+    // Auto-dismiss after 8 seconds
+    setTimeout(dismiss, 8000);
+  }
+
   private startMultiplayer(): void {
     // Spawn bot squads for both teams
-    const team1Positions = Array.from({ length: 6 }, (_, i) =>
-      new THREE.Vector3(-10 + i * 4, 1.65, 44));
-    const team2Positions = Array.from({ length: 6 }, (_, i) =>
-      new THREE.Vector3(-10 + i * 4, 1.65, -38));
+    // Player spawns at south end (Z=35) facing north (-Z direction)
+    this.player.respawn(new THREE.Vector3(0, 1.65, 35));
+
+    // Enemy squad visible in front of player at Z=15 and Z=0
+    const team1Positions = [
+      new THREE.Vector3(-6,  1.65, 15),
+      new THREE.Vector3(0,   1.65, 15),
+      new THREE.Vector3(6,   1.65, 15),
+      new THREE.Vector3(-8,  1.65, 5),
+      new THREE.Vector3(8,   1.65, 5),
+    ];
+    const team2Positions = [
+      new THREE.Vector3(-5,  1.65, -10),
+      new THREE.Vector3(5,   1.65, -10),
+      new THREE.Vector3(0,   1.65, -20),
+    ];
 
     this.squadManager.spawnSquad(team1Positions, 'REGULAR',
-      [new THREE.Vector3(-5, 1.65, 30), new THREE.Vector3(5, 1.65, 10), new THREE.Vector3(0, 1.65, 0)]
+      [new THREE.Vector3(-6, 1.65, 15), new THREE.Vector3(6, 1.65, 15), new THREE.Vector3(0, 1.65, 5)]
     );
     this.squadManager.spawnSquad(team2Positions, 'HARDENED',
-      [new THREE.Vector3(-5, 1.65, -30), new THREE.Vector3(5, 1.65, -15), new THREE.Vector3(0, 1.65, 0)]
+      [new THREE.Vector3(-5, 1.65, -10), new THREE.Vector3(5, 1.65, -10), new THREE.Vector3(0, 1.65, -20)]
     );
 
     this.hud.showSubtitle('MULTIPLAYER — Freight | Elimination', 3);
@@ -277,16 +318,25 @@ class Game {
     // AI update
     this.squadManager.update(dt, this.player.position, this.player.alive);
 
-    // Weapon raycast for player fire
+    // Weapon fire — tryFireExternal() handles cooldown/ammo/recoil then we raycast
     const weapon = this.player.currentWeapon;
     const inputState = this.inputManager.getState();
-    if (weapon && inputState.fire && weapon.canFire() && !this.player.isSprint()) {
-      const scene = this.renderer.getScene();
-      const hit = weapon.raycast(this.player.camera, scene);
-      if (hit) {
-        this.handlePlayerHit(hit);
+    if (weapon && inputState.fire && !this.player.isSprint()) {
+      const result = weapon.tryFireExternal();
+      if (result.fired) {
+        // Apply recoil kick to camera (one-shot delta per bullet)
+        this.player.applyRecoilDelta(result.recoilDeltaX, result.recoilDeltaY);
+        // Raycast for hit detection
+        const hit = weapon.raycast(this.player.camera, this.renderer.getScene());
+        if (hit) {
+          this.handlePlayerHit(hit);
+        }
+        this.hud.addCrosshairSpread(6 + Math.random() * 4);
       }
-      this.hud.addCrosshairSpread(8 + Math.random() * 5);
+    }
+    // Manual reload
+    if (weapon && inputState.reload) {
+      weapon.triggerReload();
     }
 
     // Mission position check

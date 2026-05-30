@@ -93,12 +93,7 @@ export class Player {
     this.hitReactionX *= Math.pow(0.01, dt);
     this.hitReactionY *= Math.pow(0.01, dt);
 
-    // Apply weapon recoil to camera
-    const weapon = this.currentWeapon;
-    if (weapon) {
-      this.pitch -= weapon.recoilY * 0.008;
-      this.yaw -= weapon.recoilX * 0.005;
-    }
+    // Recoil is applied as a one-shot delta by applyRecoilDelta() called from main.ts
 
     // Stance
     const prevCrouch = this.isCrouching;
@@ -195,6 +190,7 @@ export class Player {
 
     this.breathTime += dt * (state.ads ? 0.3 : 0.8);
 
+    const weapon = this.currentWeapon;
     const bobAmt = movingOnGround ? (this.isSprinting ? 0.025 : 0.012) : 0;
     const adsProgress = weapon?.getADSProgress() ?? 0;
     const breathAmt = state.ads ? 0.002 * (1 - adsProgress) : 0;
@@ -227,18 +223,13 @@ export class Player {
       this.health = Math.min(this.maxHealth, this.health + this.regenRate * dt);
     }
 
-    // Weapon update
+    // Weapon update (ADS, cooldowns, reload — no firing)
     if (weapon) {
       weapon.update(dt, {
-        fire: state.fire && !this.isSprinting,
+        fire: false, // firing driven externally by main.ts via tryFireExternal()
         ads: state.ads && !this.isSprinting,
         reload: state.reload
       });
-
-      // Weapon shooting raycast
-      if (state.fire && weapon.canFire() && !this.isSprinting) {
-        // handled in weapon.update -> tryFire, but we do raycast here
-      }
     }
 
     // Weapon switch
@@ -306,6 +297,14 @@ export class Player {
     this.velocity.set(0, 0, 0);
     this.yaw = 0;
     this.pitch = 0;
+  }
+
+  /** Called by main.ts once per shot fired — applies a small pitch kick upward */
+  applyRecoilDelta(dx: number, dy: number): void {
+    // dy > 0 = kick up (decrease pitch in YXZ = look up)
+    this.pitch -= dy * 0.015;
+    this.yaw   += dx * 0.008;
+    // Clamp still applied in update()
   }
 
   isADS(): boolean {

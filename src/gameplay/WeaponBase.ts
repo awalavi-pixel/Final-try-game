@@ -136,23 +136,13 @@ export class WeaponBase {
       this.startReload();
     }
 
-    // Burst continuation
+    // Burst continuation (no ammo decrement here — handled by tryFireExternal)
     if (this.isBursting && this.burstShotsLeft > 0 && this.burstCooldown <= 0) {
-      this.executeFire();
+      this.isBursting = false; // let external caller handle next burst shot
     } else if (this.burstShotsLeft <= 0) {
       this.isBursting = false;
     }
-
-    // Fire input
-    if (input.fire && !this.isReloading && this.fireCooldown <= 0) {
-      if (this.stats.fireMode === 'auto') {
-        this.tryFire();
-      } else if (this.stats.fireMode === 'burst' && !this.isBursting) {
-        this.startBurst();
-      } else if ((this.stats.fireMode === 'semi' || this.stats.fireMode === 'bolt') && this.fireCooldown <= 0) {
-        this.tryFire();
-      }
-    }
+    // NOTE: actual firing (ammo, cooldown, recoil) is driven by main.ts via tryFireExternal()
 
     // Weapon bob in hip
     const time = performance.now() / 1000;
@@ -306,6 +296,12 @@ export class WeaponBase {
     return this.isReloading;
   }
 
+  triggerReload(): void {
+    if (!this.isReloading && this.currentAmmo < this.stats.magazineSize && this.reserveAmmo > 0) {
+      this.startReload();
+    }
+  }
+
   getADSProgress(): number {
     return this.adsProgress;
   }
@@ -316,5 +312,43 @@ export class WeaponBase {
 
   canFire(): boolean {
     return !this.isReloading && this.fireCooldown <= 0 && this.currentAmmo > 0;
+  }
+
+  /**
+   * Called by main.ts each frame when fire is held.
+   * Returns {fired, recoilX, recoilY} so the caller can apply pitch/yaw delta once per shot.
+   */
+  tryFireExternal(): { fired: boolean; recoilDeltaX: number; recoilDeltaY: number } {
+    if (!this.canFire()) return { fired: false, recoilDeltaX: 0, recoilDeltaY: 0 };
+
+    if (this.stats.fireMode === 'burst') {
+      if (this.isBursting) return { fired: false, recoilDeltaX: 0, recoilDeltaY: 0 };
+      this.isBursting = true;
+      this.burstShotsLeft = this.stats.burstCount ?? 3;
+    }
+
+    this.currentAmmo--;
+    const fireInterval = 60 / this.stats.rpm;
+    this.fireCooldown = fireInterval;
+    this.totalShotsFired++;
+
+    const patLen = this.stats.recoilPattern.length;
+    const p = this.stats.recoilPattern[this.recoilIndex % patLen];
+    this.recoilIndex++;
+    const adsMult = 1 - this.adsProgress * 0.5;
+    const rdx = p.x * adsMult;
+    const rdy = p.y * adsMult;
+    this.recoilX += rdx;
+    this.recoilY += rdy;
+
+    this.muzzleFlashTimer = 0.05;
+    (this.muzzleFlash.material as THREE.MeshBasicMaterial).opacity = 1;
+    this.audioManager?.playGunshot(this.stats.id, this.stats.suppressedDefault ?? false);
+
+    if (this.currentAmmo <= 0 && this.reserveAmmo > 0) {
+      this.startReload();
+    }
+
+    return { fired: true, recoilDeltaX: rdx, recoilDeltaY: rdy };
   }
 }
